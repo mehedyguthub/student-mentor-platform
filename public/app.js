@@ -19,12 +19,15 @@ const avatar = (u) => u && u.profilePicture ? `<img class="avatar" src="${esc(u.
 const bind = (root, sel, fn) => root.querySelectorAll(sel).forEach((el) => el.addEventListener("click", () => fn(el)));
 const main = () => $("#main");
 const safe = (fn) => async (...a) => { try { await fn(...a); } catch (e) { toast(e.message); } };
+const connBtn = (id, st) => st === "accepted" ? '<button class="btn sm" disabled>Connected ✓</button>' : st === "sent" ? '<button class="btn sm" disabled>Request sent</button>' : st === "incoming" ? `<button class="btn sm" data-c="${id}">Accept request</button>` : `<button class="btn sm" data-c="${id}">Connect</button>`;
+const connMap = async () => { const d = await api("/connections"), m = {}; d.connections.forEach((c) => { if (!c.requester || !c.recipient) return; const mine = c.requester._id === me._id, other = mine ? c.recipient._id : c.requester._id; m[other] = c.status === "pending" ? (mine ? "sent" : "incoming") : c.status; }); return m; };
+const doConnect = safe(async (b) => { b.disabled = true; try { const r = await api("/connections/" + b.dataset.c, { method: "POST" }); const st = (await connMap())[b.dataset.c]; if (st === "accepted") { b.textContent = "Connected ✓"; } else if (st === "sent") { b.textContent = "Request sent"; } else { b.disabled = false; toast("The request was not saved. Please try again."); return; } if (r.message) toast(r.message); } catch (e) { b.disabled = false; throw e; } });
 const loadReco = safe(async () => {
   const box = $("#reco");
   box.innerHTML = '<p class="mut">Finding your best matches…</p>';
-  const d = await api("/recommendations");
-  box.innerHTML = d.recommendations.map((r) => `<div class="card"><b>${esc(r.mentor.name)}</b><div class="mut">${esc(r.mentor.field)}</div><p>${esc(r.reason)}</p><div class="row"><button class="btn sm" data-c="${r.mentor.id}">Connect</button><a class="btn sm alt" href="messages.html?user=${r.mentor.id}">Message</a></div><div class="mut">${d.source === "ai" ? "AI-generated match" : "Keyword match"}</div></div>`).join("") || '<p class="mut">No matches yet. Add skills and interests to your profile, then refresh.</p>';
-  bind(box, "[data-c]", safe(async (b) => { await api("/connections/" + b.dataset.c, { method: "POST" }); b.textContent = "Request sent"; b.disabled = true; }));
+  const d = await api("/recommendations"), cm = await connMap();
+  box.innerHTML = d.recommendations.map((r) => `<div class="card"><b>${esc(r.mentor.name)}</b><div class="mut">${esc(r.mentor.field)}</div><p>${esc(r.reason)}</p><div class="row">${connBtn(r.mentor.id, cm[r.mentor.id])}<a class="btn sm alt" href="messages.html?user=${r.mentor.id}">Message</a></div><div class="mut">${d.source === "ai" ? "AI-generated match" : "Keyword match"}</div></div>`).join("") || '<p class="mut">No matches yet. Add skills and interests to your profile, then refresh.</p>';
+  bind(box, "[data-c]", doConnect);
 });
 
 // ---------- navbar + real-time notifications ----------
@@ -84,9 +87,9 @@ P.dashboard = safe(async () => {
 P.mentors = safe(async () => {
   const who = me.role === "mentor" ? "students" : "mentors";
   const load = safe(async () => {
-    const d = await api(`/users/${who}?search=${encodeURIComponent($("#q").value)}`);
-    $("#list").innerHTML = d[who].map((u) => `<div class="card"><b>${esc(u.name)}</b> <span class="tag">${esc(u.role)}</span><div class="mut">${esc(u.field)}</div><p>${esc(u.bio)}</p>${(u.skills || []).map((s) => `<span class="tag">${esc(s)}</span>`).join("")}<div class="row" style="margin-top:.6rem"><button class="btn sm" data-c="${u.id}">Connect</button> <a class="btn sm alt" href="messages.html?user=${u.id}">Message</a></div></div>`).join("") || '<p class="mut">No results.</p>';
-    bind($("#list"), "[data-c]", safe(async (b) => { await api("/connections/" + b.dataset.c, { method: "POST" }); b.textContent = "Request sent"; b.disabled = true; }));
+    const [d, cm] = await Promise.all([api(`/users/${who}?search=${encodeURIComponent($("#q").value)}`), connMap()]);
+    $("#list").innerHTML = d[who].map((u) => `<div class="card"><b>${esc(u.name)}</b> <span class="tag">${esc(u.role)}</span><div class="mut">${esc(u.field)}</div><p>${esc(u.bio)}</p>${(u.skills || []).map((s) => `<span class="tag">${esc(s)}</span>`).join("")}<div class="row" style="margin-top:.6rem">${connBtn(u.id, cm[u.id])} <a class="btn sm alt" href="messages.html?user=${u.id}">Message</a></div></div>`).join("") || '<p class="mut">No results.</p>';
+    bind($("#list"), "[data-c]", doConnect);
   });
   main().innerHTML = `<h1>Find ${who}</h1><input id="q" placeholder="Search by name, field or skill"><div class="grid" id="list"></div>`;
   $("#q").oninput = (() => { let t; return () => { clearTimeout(t); t = setTimeout(load, 300); }; })(); load();

@@ -89,6 +89,16 @@ async function start() {
   }
   await mongoose.connect(process.env.MONGODB_URI);
   console.log("Connected to MongoDB");
+  // Remove stale/leftover indexes (e.g. a unique index on requester or recipient alone) that
+  // wrongly block new connection requests, then rebuild the correct ones from the schema.
+  try {
+    const Connection = require("./models/Connection");
+    const before = (await Connection.collection.indexes()).map((i) => i.name);
+    await Connection.syncIndexes();
+    const after = (await Connection.collection.indexes()).map((i) => i.name);
+    const dropped = before.filter((n) => !after.includes(n));
+    if (dropped.length) console.log("Removed stale Connection indexes:", dropped.join(", "));
+  } catch (e) { console.error("Could not sync Connection indexes:", e.message); }
   server.listen(PORT, () => console.log(`Platform running at http://localhost:${PORT}`));
 }
 
