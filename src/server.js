@@ -23,6 +23,7 @@ const reportRoutes = require("./routes/reports");
 const adminRoutes = require("./routes/admin");
 
 const app = express();
+app.set("trust proxy", 1);
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: process.env.CLIENT_ORIGIN ? process.env.CLIENT_ORIGIN.split(",").map(x => x.trim()) : true } });
 app.set("io", io);
